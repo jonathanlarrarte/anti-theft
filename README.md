@@ -72,8 +72,8 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
 Clone the repository and install the Python dependencies:
 
 ```bash
-git clone https://github.com/larrarte13/theft-detection.git
-cd theft-detection
+git clone https://github.com/jonathanlarrarte/anti-theft.git
+cd anti-theft
 pip install -r requirements.txt
 ```
 
@@ -196,6 +196,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-*GitHub Repository:* [larrarte13/theft-detection](https://github.com/larrarte13/theft-detection)
+*GitHub Repository:* [jonathanlarrarte/anti-theft](https://github.com/jonathanlarrarte/anti-theft)
 
 *Originally based on [vahapogut/Theft-Detection](https://github.com/vahapogut/Theft-Detection) by Abdulvahap Öğüt.*

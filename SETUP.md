@@ -31,7 +31,7 @@ Este documento es la guía **práctica** de "cómo lo prendo y lo configuro".
 Si es la primera vez:
 
 ```bash
-git clone https://github.com/larrarte13/theft-detection.git detection
+git clone https://github.com/jonathanlarrarte/anti-theft.git detection
 cd detection
 ```
 
