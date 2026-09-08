@@ -1,0 +1,9 @@
+.git
+dashboard
+docs
+alerts
+*.db
+__pycache__
+*.pyc
+.env
+error_log.txt

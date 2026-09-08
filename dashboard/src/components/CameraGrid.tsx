@@ -131,13 +131,13 @@ export default function CameraGrid() {
       {!isConnected && (
         <div className="mb-4 p-3 bg-danger/20 border border-danger text-danger rounded flex items-center gap-2 text-sm">
           <WifiOff className="w-5 h-5" />
-          <span>Disconnected from Surveillance Server. Make sure the backend is running. Retrying...</span>
+          <span>Desconectado del servidor de vigilancia. Verifica que el backend esté corriendo. Reintentando...</span>
         </div>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {cameras.length === 0 && isConnected ? (
           <div className="col-span-1 lg:col-span-2 text-center p-10 text-foreground/50 border border-glass-border border-dashed rounded-lg">
-            No active cameras. Please add a camera from the backend.
+            No hay cámaras activas. Agrega una cámara desde la sección de Cámaras.
           </div>
         ) : (
           cameras.map((cam) => {

@@ -35,7 +35,7 @@ export default function StatsCharts() {
           for (let i = 6; i >= 0; i--) {
             const d = new Date(today);
             d.setDate(today.getDate() - i);
-            const dayLabel = d.toLocaleDateString("tr-TR", { weekday: "short" });
+            const dayLabel = d.toLocaleDateString("es-ES", { weekday: "short" });
             const val = data.weekly_data[6 - i] || 0;
             formatted.push({
               name: dayLabel,
@@ -68,7 +68,7 @@ export default function StatsCharts() {
               <Cpu className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-medium text-foreground/75">CPU Kullanımı</h4>
+              <h4 className="text-sm font-medium text-foreground/75">Uso de CPU</h4>
               <p className="text-2xl font-bold">{systemStats.cpu}%</p>
             </div>
           </div>
@@ -86,7 +86,7 @@ export default function StatsCharts() {
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-medium text-foreground/75">Bellek (RAM) Kullanımı</h4>
+              <h4 className="text-sm font-medium text-foreground/75">Uso de memoria (RAM)</h4>
               <p className="text-2xl font-bold">{systemStats.ram}%</p>
             </div>
           </div>
@@ -103,7 +103,7 @@ export default function StatsCharts() {
         {/* Weekly Stats */}
         <div className="glass-panel p-5">
           <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
-            Haftalık Güvenlik Olayları
+            Eventos de seguridad semanales
           </h3>
           <div className="h-64 flex items-center justify-center">
             {loading ? (
@@ -118,8 +118,8 @@ export default function StatsCharts() {
                     cursor={{ fill: "rgba(255,255,255,0.05)" }}
                     contentStyle={{ backgroundColor: "rgba(15, 17, 26, 0.9)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px" }}
                   />
-                  <Bar dataKey="thefts" fill="#ef4444" radius={[4, 4, 0, 0]} name="Şüpheli Davranış" />
-                  <Bar dataKey="falseAlarms" fill="#3b82f6" radius={[4, 4, 0, 0]} name="İncelendi / Temiz" />
+                  <Bar dataKey="thefts" fill="#ef4444" radius={[4, 4, 0, 0]} name="Comportamiento sospechoso" />
+                  <Bar dataKey="falseAlarms" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Revisado / Sin novedad" />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -129,7 +129,7 @@ export default function StatsCharts() {
         {/* Hourly Trend */}
         <div className="glass-panel p-5">
           <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
-            Bugünün Alarm Eğilimi
+            Tendencia de alarmas de hoy
           </h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">

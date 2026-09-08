@@ -1,0 +1,15 @@
+# Same as requirements.txt, minus face_recognition (needs dlib/cmake build
+# toolchain that makes the image slow to build). The app degrades gracefully
+# without it -- only the Face ID panel is disabled. Add it back here (and
+# the matching apt packages: cmake, build-essential) if you need face ID.
+fastapi
+uvicorn
+websockets
+opencv-python
+ultralytics
+numpy
+lapx
+requests
+python-dotenv
+psutil
+python-multipart

@@ -24,6 +24,10 @@ import requests
 from pydantic import BaseModel
 import sqlite3
 import pickle
+import subprocess
+import hashlib
+from collections import deque
+from modules import MODULE_REGISTRY, TrackContext, compute_hip_motion
 try:
     import face_recognition
     FACE_REC_AVAILABLE = True
@@ -56,6 +60,17 @@ app.add_middleware(
 # --- Database Setup ---
 DB_NAME = "theft_detection.db"
 
+DEFAULT_TENANT_ID = "default"
+DEFAULT_SITE_ID = "default"
+
+# Catálogo fijo de módulos de comportamiento (id -> (nombre, parámetros por defecto))
+MODULE_CATALOG = {
+    "loitering": ("Merodeo (loitering)", {"dwell_seconds": 5.0}),
+    "zone_intrusion": ("Intrusión de zona", {}),
+    "concealment": ("Ocultamiento de artículo", {}),
+    "wall_climbing": ("Escalamiento de muro", {"wall_height_px": 200, "climb_speed_threshold": 15.0}),
+}
+
 def init_db():
     try:
         conn = sqlite3.connect(DB_NAME)
@@ -64,6 +79,39 @@ def init_db():
                      (id TEXT PRIMARY KEY, message TEXT, timestamp TEXT, image_path TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS faces
                      (id TEXT PRIMARY KEY, name TEXT, type TEXT, encoding BLOB)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS tenants
+                     (id TEXT PRIMARY KEY, name TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS sites
+                     (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS modules
+                     (id TEXT PRIMARY KEY, name TEXT NOT NULL, default_params TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS zones
+                     (id TEXT PRIMARY KEY, camera_id TEXT NOT NULL, site_id TEXT NOT NULL, name TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS zone_modules
+                     (id TEXT PRIMARY KEY, zone_id TEXT NOT NULL, module_id TEXT NOT NULL,
+                      enabled INTEGER NOT NULL DEFAULT 1, params TEXT NOT NULL,
+                      UNIQUE(zone_id, module_id))''')
+
+        # Migración idempotente: columnas de evidencia en video (clip corto + hash de integridad)
+        c.execute("PRAGMA table_info(alerts)")
+        existing_cols = {row[1] for row in c.fetchall()}
+        if "clip_path" not in existing_cols:
+            c.execute("ALTER TABLE alerts ADD COLUMN clip_path TEXT")
+        if "clip_hash" not in existing_cols:
+            c.execute("ALTER TABLE alerts ADD COLUMN clip_hash TEXT")
+
+        # Migración idempotente: cada zona guarda su propio polígono (antes vivía en cameras.json,
+        # asumiendo 1 zona = 1 cámara; ahora una cámara puede tener varias zonas)
+        c.execute("PRAGMA table_info(zones)")
+        existing_zone_cols = {row[1] for row in c.fetchall()}
+        if "polygon" not in existing_zone_cols:
+            c.execute("ALTER TABLE zones ADD COLUMN polygon TEXT NOT NULL DEFAULT '[]'")
+
+        c.execute("INSERT OR IGNORE INTO tenants VALUES (?,?)", (DEFAULT_TENANT_ID, "Tenant por defecto"))
+        c.execute("INSERT OR IGNORE INTO sites VALUES (?,?,?)", (DEFAULT_SITE_ID, DEFAULT_TENANT_ID, "Sitio 1"))
+        for module_id, (name, default_params) in MODULE_CATALOG.items():
+            c.execute("INSERT OR IGNORE INTO modules VALUES (?,?,?)", (module_id, name, json.dumps(default_params)))
+
         conn.commit()
         conn.close()
         print("Database initialized.")
@@ -162,7 +210,7 @@ load_known_faces()
 
 @app.post("/faces/register")
 async def register_face(file: UploadFile = File(...), name: str = Form(...), type: str = Form("blacklist")):
-    if not FACE_REC_AVAILABLE: return {"status": "error", "message": "Face Rec not available"}
+    if not FACE_REC_AVAILABLE: return {"status": "error", "message": "El reconocimiento facial no está disponible"}
     temp_filename = f"temp_{uuid.uuid4()}.jpg"
     try:
         with open(temp_filename, "wb") as buffer:
@@ -183,9 +231,9 @@ async def register_face(file: UploadFile = File(...), name: str = Form(...), typ
             conn.close()
             
             load_known_faces() # Reload
-            return {"status": "success", "message": f"Face registered: {name}"}
+            return {"status": "success", "message": f"Rostro registrado: {name}"}
         else:
-            return {"status": "error", "message": "No face found in image"}
+            return {"status": "error", "message": "No se encontró ningún rostro en la imagen"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
     finally:
@@ -237,7 +285,7 @@ async def save_settings(settings: SettingsModel):
         json.dump(safe_settings, f, indent=4)
         
     load_dotenv(override=True)
-    return {"status": "success", "message": "Settings saved"}
+    return {"status": "success", "message": "Configuración guardada"}
 
 @app.post("/roi")
 async def save_roi(data: dict):
@@ -265,27 +313,27 @@ async def test_settings(settings: SettingsModel):
             msg = MIMEMultipart()
             msg['From'] = settings.senderEmail
             msg['To'] = settings.receiverEmail
-            msg['Subject'] = "Theft Detection - Test Email"
-            msg.attach(MIMEText("This is a test email from your Theft Detection System.", 'plain'))
+            msg['Subject'] = "TheftGuard - Correo de prueba"
+            msg.attach(MIMEText("Este es un correo de prueba de tu sistema TheftGuard.", 'plain'))
             server = smtplib.SMTP(settings.smtpServer, int(settings.smtpPort))
             server.starttls()
             server.login(settings.senderEmail, settings.senderPassword)
             server.send_message(msg)
             server.quit()
         except Exception as e:
-            return {"status": "error", "message": f"Email Test Failed: {str(e)}"}
+            return {"status": "error", "message": f"Prueba de correo fallida: {str(e)}"}
 
     if settings.telegramEnabled:
         try:
             url = f"https://api.telegram.org/bot{settings.telegramBotToken}/sendMessage"
-            data = {"chat_id": settings.telegramChatId, "text": "Theft Detection - Test Message"}
+            data = {"chat_id": settings.telegramChatId, "text": "TheftGuard - Mensaje de prueba"}
             resp = requests.post(url, data=data)
             if resp.status_code != 200:
-                 return {"status": "error", "message": f"Telegram Test Failed: {resp.text}"}
+                 return {"status": "error", "message": f"Prueba de Telegram fallida: {resp.text}"}
         except Exception as e:
-            return {"status": "error", "message": f"Telegram Test Failed: {str(e)}"}
-            
-    return {"status": "success", "message": "All enabled tests sent successfully!"}
+            return {"status": "error", "message": f"Prueba de Telegram fallida: {str(e)}"}
+
+    return {"status": "success", "message": "¡Todas las pruebas habilitadas se enviaron correctamente!"}
 
 
 
@@ -298,7 +346,7 @@ async def delete_face(face_id: str):
         conn.commit()
         conn.close()
         load_known_faces() # Reload
-        return {"status": "success", "message": "Face deleted successfully"}
+        return {"status": "success", "message": "Rostro eliminado correctamente"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -319,10 +367,19 @@ async def get_history():
 
 # Global variables
 roi_points = []
-roi_entry_times = {}
-LOITERING_THRESHOLD = 5.0
 last_alert_time = 0
 ALERT_COOLDOWN = 3.0
+
+# --- Evidencia en video (clip corto por alerta) ---
+CLIP_PRE_SECONDS = 3.0
+CLIP_POST_SECONDS = 3.0
+CLIP_WIDTH, CLIP_HEIGHT = 640, 360
+CLIP_FPS_FALLBACK = 20
+CLIP_BUFFER_MAXLEN = int((CLIP_PRE_SECONDS + CLIP_POST_SECONDS + 2) * 25)  # margen sobre ~25fps
+
+# Colores (BGR) para distinguir zonas a simple vista en el video en vivo
+ZONE_COLORS = [(0, 255, 255), (255, 0, 255), (0, 255, 0), (255, 165, 0), (255, 255, 0)]
+
 latest_frame = None
 alert_payload = None # Initialize
 lock = threading.Lock()
@@ -341,6 +398,7 @@ class ThreadedCamera:
         except:
             self.src_val = src
             is_index = False
+        self.is_index = is_index
 
         if is_index and os.name == 'nt':
             self.cap = cv2.VideoCapture(self.src_val, cv2.CAP_DSHOW)
@@ -365,6 +423,10 @@ class ThreadedCamera:
         while self.running:
             if self.cap.isOpened():
                 ret, frame = self.cap.read()
+                if not ret and not self.is_index:
+                    # Likely reached the end of a video file; loop back to the start
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
                 with self.lock:
                     self.ret = ret
                     if ret:
@@ -385,6 +447,71 @@ class ThreadedCamera:
     def release(self):
         self.running = False
         self.cap.release()
+
+# --- Zone / Module Engine ---
+camera_zones_cache = {}  # camera_id -> [{"zone_id":, "name":, "polygon": [[x,y],...], "modules": [{"module_id":, "params":}, ...]}]
+zone_cache_lock = threading.Lock()
+
+def ensure_default_zone(camera_id, initial_polygon=None):
+    """Crea la primera zona de una cámara si todavía no tiene ninguna, sembrando
+    zone_modules con el comportamiento por defecto (loitering/zone_intrusion/
+    concealment encendidos, wall_climbing apagado porque requiere calibración).
+    initial_polygon migra sin pérdida el ROI que la cámara ya tuviera antes de
+    que existiera multi-zona (venía en cameras.json)."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM zones WHERE camera_id = ?", (camera_id,))
+    if c.fetchone()[0] == 0:
+        zone_id = str(uuid.uuid4())
+        polygon = initial_polygon or []
+        c.execute(
+            "INSERT INTO zones (id, camera_id, site_id, name, polygon) VALUES (?,?,?,?,?)",
+            (zone_id, camera_id, DEFAULT_SITE_ID, "Zona 1", json.dumps(polygon))
+        )
+        for module_id, (_, default_params) in MODULE_CATALOG.items():
+            enabled = 0 if module_id == "wall_climbing" else 1
+            c.execute(
+                "INSERT OR IGNORE INTO zone_modules VALUES (?,?,?,?,?)",
+                (str(uuid.uuid4()), zone_id, module_id, enabled, json.dumps(default_params))
+            )
+        conn.commit()
+    conn.close()
+
+def refresh_zone_cache():
+    global camera_zones_cache
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT id, camera_id, name, polygon FROM zones")
+        zone_rows = c.fetchall()
+
+        c.execute("""SELECT zone_id, module_id, params FROM zone_modules WHERE enabled = 1""")
+        modules_by_zone = {}
+        for row in c.fetchall():
+            modules_by_zone.setdefault(row["zone_id"], []).append({
+                "module_id": row["module_id"],
+                "params": json.loads(row["params"])
+            })
+        conn.close()
+
+        new_cache = {}
+        for zone in zone_rows:
+            new_cache.setdefault(zone["camera_id"], []).append({
+                "zone_id": zone["id"],
+                "name": zone["name"],
+                "polygon": json.loads(zone["polygon"]),
+                "modules": modules_by_zone.get(zone["id"], [])
+            })
+        with zone_cache_lock:
+            camera_zones_cache = new_cache
+    except Exception as e:
+        print(f"Error refreshing zone cache: {e}")
+
+def zone_cache_refresher_loop():
+    while True:
+        time.sleep(5)
+        refresh_zone_cache()
 
 # --- Camera Management ---
 class CameraManager:
@@ -407,7 +534,7 @@ class CameraManager:
                 print(f"Error loading cameras.json: {e}")
 
         # Fallback to default webcam if no file exists
-        self.add_camera_internal("0", "0", "Kamera 1", [])
+        self.add_camera_internal("0", "0", "Cámara 1", [])
         self.save_cameras()
 
     def save_cameras(self):
@@ -419,8 +546,7 @@ class CameraManager:
                     data.append({
                         "id": cam_id,
                         "name": cam_data["name"],
-                        "source": cam_data["source"],
-                        "roi_points": cam_data.get("roi_points", [])
+                        "source": cam_data["source"]
                     })
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
@@ -434,11 +560,14 @@ class CameraManager:
             "name": name,
             "source": source,
             "status": "active" if threaded_cap.isOpened() else "error",
-            "roi_points": roi_points,
             "heatmap_accumulator": None,
-            "roi_entry_times": {},
-            "last_alert_time": 0
+            "last_alert_time": 0,
+            "clip_buffer": deque(maxlen=CLIP_BUFFER_MAXLEN),
+            "clip_pending": []
         }
+        # roi_points viene de un cameras.json viejo (pre multi-zona) -- si existe,
+        # se usa para no perder el ROI ya dibujado al migrar a la primera zona.
+        ensure_default_zone(cam_id, initial_polygon=roi_points)
 
     def add_camera(self, source, name):
         cam_id = str(uuid.uuid4())
@@ -450,16 +579,17 @@ class CameraManager:
                     "name": name,
                     "source": source,
                     "status": "active",
-                    "roi_points": [],
                     "heatmap_accumulator": None,
-                    "roi_entry_times": {},
-                    "last_alert_time": 0
+                    "last_alert_time": 0,
+                    "clip_buffer": deque(maxlen=CLIP_BUFFER_MAXLEN),
+                    "clip_pending": []
                 }
             self.save_cameras()
-            print(f"Kamera eklendi: {name} ({source}) ID: {cam_id}")
+            ensure_default_zone(cam_id, initial_polygon=[])
+            print(f"Cámara agregada: {name} ({source}) ID: {cam_id}")
             return {"id": cam_id, "status": "connected"}
         else:
-            print(f"Kamera açılamadı: {source}")
+            print(f"No se pudo abrir la cámara: {source}")
             return {"id": None, "status": "failed"}
 
     def remove_camera(self, cam_id):
@@ -472,16 +602,36 @@ class CameraManager:
                 status = False
         if status:
             self.save_cameras()
+            try:
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                c.execute("DELETE FROM zone_modules WHERE zone_id IN (SELECT id FROM zones WHERE camera_id = ?)", (cam_id,))
+                c.execute("DELETE FROM zones WHERE camera_id = ?", (cam_id,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Error cleaning up zones for camera {cam_id}: {e}")
+            refresh_zone_cache()
         return status
 
     def get_active_cameras(self):
+        try:
+            conn = sqlite3.connect(DB_NAME)
+            c = conn.cursor()
+            c.execute("SELECT camera_id, COUNT(*) FROM zones GROUP BY camera_id")
+            zone_counts = dict(c.fetchall())
+            conn.close()
+        except Exception as e:
+            print(f"Error counting zones: {e}")
+            zone_counts = {}
+
         with self.lock:
             return [{
-                "id": k, 
-                "name": v["name"], 
-                "source": v["source"], 
+                "id": k,
+                "name": v["name"],
+                "source": v["source"],
                 "status": "active" if v["cap"].isOpened() else "error",
-                "roi_points": v.get("roi_points", [])
+                "zone_count": zone_counts.get(k, 0)
             } for k, v in self.cameras.items()]
 
 camera_manager = CameraManager()
@@ -503,9 +653,9 @@ async def add_new_camera(cam: CameraInput):
                 "source": cam_data["source"] if cam_data else cam.source,
                 "status": "active"
             } if cam_data else None
-        return {"message": "Camera added", "camera": cam_details}
+        return {"message": "Cámara agregada", "camera": cam_details}
     else:
-        raise HTTPException(status_code=400, detail="Failed to open camera")
+        raise HTTPException(status_code=400, detail="No se pudo abrir la cámara")
 
 @app.get("/stats")
 def get_stats():
@@ -551,27 +701,160 @@ async def list_cameras():
 @app.delete("/cameras/{camera_id}")
 async def delete_camera(camera_id: str):
     if camera_manager.remove_camera(camera_id):
-        return {"message": "Camera removed"}
-    raise HTTPException(status_code=404, detail="Camera not found")
+        return {"message": "Cámara eliminada"}
+    raise HTTPException(status_code=404, detail="Cámara no encontrada")
 
-@app.post("/cameras/{camera_id}/roi")
-async def save_camera_roi(camera_id: str, data: dict):
-    if "points" in data:
-        points = data["points"]
-        with camera_manager.lock:
-            if camera_id in camera_manager.cameras:
-                camera_manager.cameras[camera_id]["roi_points"] = points
-                camera_manager.save_cameras()
-                return {"status": "success", "roi_points": points}
-        raise HTTPException(status_code=404, detail="Camera not found")
-    raise HTTPException(status_code=400, detail="Invalid data")
+@app.get("/modules")
+async def list_modules():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT id, name, default_params FROM modules")
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"], "default_params": json.loads(r["default_params"])} for r in rows]
 
-@app.get("/cameras/{camera_id}/roi")
-async def get_camera_roi(camera_id: str):
+class ModuleUpdate(BaseModel):
+    enabled: bool
+    params: dict = {}
+
+class ZoneInput(BaseModel):
+    name: str
+
+class ZoneUpdate(BaseModel):
+    name: str | None = None
+    polygon: list | None = None
+
+@app.get("/cameras/{camera_id}/zones")
+async def list_zones(camera_id: str):
     with camera_manager.lock:
-        if camera_id in camera_manager.cameras:
-            return {"points": camera_manager.cameras[camera_id].get("roi_points", [])}
-    raise HTTPException(status_code=404, detail="Camera not found")
+        if camera_id not in camera_manager.cameras:
+            raise HTTPException(status_code=404, detail="Cámara no encontrada")
+    ensure_default_zone(camera_id)
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT id, name, polygon FROM zones WHERE camera_id = ? ORDER BY name", (camera_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"], "polygon": json.loads(r["polygon"])} for r in rows]
+
+@app.post("/cameras/{camera_id}/zones")
+async def create_zone(camera_id: str, zone: ZoneInput):
+    with camera_manager.lock:
+        if camera_id not in camera_manager.cameras:
+            raise HTTPException(status_code=404, detail="Cámara no encontrada")
+
+    zone_id = str(uuid.uuid4())
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO zones (id, camera_id, site_id, name, polygon) VALUES (?,?,?,?,?)",
+        (zone_id, camera_id, DEFAULT_SITE_ID, zone.name, "[]")
+    )
+    for module_id, (_, default_params) in MODULE_CATALOG.items():
+        enabled = 0 if module_id == "wall_climbing" else 1
+        c.execute(
+            "INSERT INTO zone_modules VALUES (?,?,?,?,?)",
+            (str(uuid.uuid4()), zone_id, module_id, enabled, json.dumps(default_params))
+        )
+    conn.commit()
+    conn.close()
+
+    refresh_zone_cache()
+    return {"id": zone_id, "name": zone.name, "polygon": []}
+
+@app.put("/zones/{zone_id}")
+async def update_zone(zone_id: str, update: ZoneUpdate):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id FROM zones WHERE id = ?", (zone_id,))
+    if not c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+
+    if update.name is not None:
+        c.execute("UPDATE zones SET name = ? WHERE id = ?", (update.name, zone_id))
+    if update.polygon is not None:
+        c.execute("UPDATE zones SET polygon = ? WHERE id = ?", (json.dumps(update.polygon), zone_id))
+    conn.commit()
+    conn.close()
+
+    refresh_zone_cache()
+    return {"status": "success"}
+
+@app.delete("/zones/{zone_id}")
+async def delete_zone(zone_id: str):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM zone_modules WHERE zone_id = ?", (zone_id,))
+    c.execute("DELETE FROM zones WHERE id = ?", (zone_id,))
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+
+    refresh_zone_cache()
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+    return {"message": "Zona eliminada"}
+
+@app.get("/zones/{zone_id}/modules")
+async def get_zone_modules(zone_id: str):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT id FROM zones WHERE id = ?", (zone_id,))
+    if not c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+
+    c.execute("SELECT id, name, default_params FROM modules")
+    catalog = c.fetchall()
+    c.execute("SELECT module_id, enabled, params FROM zone_modules WHERE zone_id = ?", (zone_id,))
+    zone_rows = {r["module_id"]: r for r in c.fetchall()}
+    conn.close()
+
+    result = []
+    for m in catalog:
+        zm = zone_rows.get(m["id"])
+        result.append({
+            "module_id": m["id"],
+            "name": m["name"],
+            "enabled": bool(zm["enabled"]) if zm else False,
+            "params": json.loads(zm["params"]) if zm else json.loads(m["default_params"])
+        })
+    return result
+
+@app.post("/zones/{zone_id}/modules/{module_id}")
+async def update_zone_module(zone_id: str, module_id: str, update: ModuleUpdate):
+    if module_id not in MODULE_CATALOG:
+        raise HTTPException(status_code=404, detail="Módulo no encontrado")
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id FROM zones WHERE id = ?", (zone_id,))
+    if not c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Zona no encontrada")
+
+    c.execute("SELECT id FROM zone_modules WHERE zone_id = ? AND module_id = ?", (zone_id, module_id))
+    existing = c.fetchone()
+    if existing:
+        c.execute(
+            "UPDATE zone_modules SET enabled = ?, params = ? WHERE id = ?",
+            (1 if update.enabled else 0, json.dumps(update.params), existing[0])
+        )
+    else:
+        c.execute(
+            "INSERT INTO zone_modules VALUES (?,?,?,?,?)",
+            (str(uuid.uuid4()), zone_id, module_id, 1 if update.enabled else 0, json.dumps(update.params))
+        )
+    conn.commit()
+    conn.close()
+
+    refresh_zone_cache()
+    return {"status": "success", "module_id": module_id, "enabled": update.enabled, "params": update.params}
 
 
 
@@ -586,69 +869,21 @@ class PersonState:
         self.last_holding_time = 0
         self.face_checked = False
         self.face_check_time = 0
+        # Usados por modules.py (LoiteringModule) -- por zona, porque una persona
+        # puede estar dentro de una zona y fuera de otra al mismo tiempo
+        self.roi_entry_times = {}       # {zone_id: entry_time}
+        self.last_dwell_durations = {}  # {zone_id: duration}
+        # Usados por compute_hip_motion()/WallClimbingModule -- una sola vez por
+        # persona por frame, no depende de la zona
+        self.prev_hip_y = 0
+        self.prev_hip_time = 0
 
 person_states = {} # {(cam_id, track_id): PersonState}
 
 # --- Helper Functions for Pose ---
-def check_reaching(keypoints, roi_poly):
-    if len(keypoints) < 11: return False, None
-    left_wrist = keypoints[9]
-    right_wrist = keypoints[10]
-    reaching_hand = None
-    
-    if left_wrist[0] > 0 and left_wrist[1] > 0 and len(roi_poly) >= 3:
-        if cv2.pointPolygonTest(np.array(roi_poly), (int(left_wrist[0]), int(left_wrist[1])), False) >= 0:
-            reaching_hand = "LEFT"
-
-    if right_wrist[0] > 0 and right_wrist[1] > 0 and len(roi_poly) >= 3:
-        if cv2.pointPolygonTest(np.array(roi_poly), (int(right_wrist[0]), int(right_wrist[1])), False) >= 0:
-            reaching_hand = "RIGHT"
-            
-    return (reaching_hand is not None), reaching_hand
-
-def check_object_in_hand(keypoints, object_boxes, hand="LEFT"):
-    # Check if any object box is close to the specified wrist
-    if len(keypoints) < 11: return False
-    wrist = keypoints[9] if hand == "LEFT" else keypoints[10]
-    
-    if wrist[0] == 0: return False
-    
-    for box in object_boxes:
-        # Box: x1, y1, x2, y2
-        # Check distance from wrist to box center
-        box_cx = (box[0] + box[2]) / 2
-        box_cy = (box[1] + box[3]) / 2
-        
-        dist = np.sqrt((wrist[0] - box_cx)**2 + (wrist[1] - box_cy)**2)
-        
-        # If wrist is CLOSE to object center (e.g. < 100px) OR wrist is INSIDE box
-        if dist < 120: # Threshold
-            return True
-        if box[0] < wrist[0] < box[2] and box[1] < wrist[1] < box[3]:
-            return True
-            
-    return False
-
-def check_concealment(keypoints, reaching_hand):
-    if len(keypoints) < 13: return False
-    left_hip = keypoints[11]
-    right_hip = keypoints[12]
-    target_wrist = keypoints[9] if reaching_hand == "LEFT" else keypoints[10]
-    
-    if target_wrist[0] == 0 or left_hip[0] == 0 or right_hip[0] == 0: return False
-    
-    hip_center_x = (left_hip[0] + right_hip[0]) / 2
-    hip_center_y = (left_hip[1] + right_hip[1]) / 2
-    
-    dist_x = target_wrist[0] - hip_center_x
-    dist_y = target_wrist[1] - hip_center_y
-    distance = np.sqrt(dist_x**2 + dist_y**2)
-    
-    hip_width = np.abs(left_hip[0] - right_hip[0])
-    threshold = max(hip_width * 1.5, 100) 
-    
-    return distance < threshold
-
+# check_reaching / check_object_in_hand / check_concealment viven ahora en
+# modules.py (ZoneIntrusionModule / ConcealmentModule). check_bending se queda
+# acá porque solo alimenta un overlay informativo, no un módulo de comportamiento.
 def check_bending(keypoints):
     if len(keypoints) < 12: return False
     l_shoulder = keypoints[5]
@@ -661,29 +896,29 @@ def check_bending(keypoints):
 def video_loop():
     global latest_frame, current_settings, alert_payload, known_face_encodings, known_face_names, known_face_types, person_states
     
-    print("Video Loop Başlatılıyor...") 
+    print("Iniciando bucle de video...")
     model_obj = None # Fallback or specialized
     model_is_specialized = False
-    
+
     try:
-        print("Loading Pose Model...")
-        model_pose = YOLO('yolov8n-pose.pt') 
-        
-        print("Loading Theft Detection Model...")
+        print("Cargando modelo de pose...")
+        model_pose = YOLO('yolov8n-pose.pt')
+
+        print("Cargando modelo de detección de robo...")
         try:
             # Try to load specialized model first
             model_obj = YOLO('shoplifting.pt')
             model_is_specialized = True
-            print("Özel Hırsızlık Modeli Yüklendi! (shoplifting.pt)")
+            print("¡Modelo especializado de robo cargado! (shoplifting.pt)")
         except:
-            print("Özel model bulunamadı, standart nesne takibine (yolov8n.pt) geçiliyor...")
+            print("No se encontró un modelo especializado, usando detección de objetos estándar (yolov8n.pt)...")
             try:
                 model_obj = YOLO('yolov8n.pt')
             except Exception as e:
-                print(f"Standart Model de yüklenemedi: {e}")
+                print(f"Tampoco se pudo cargar el modelo estándar: {e}")
                 model_obj = None
 
-        print("Modeller hazır.")
+        print("Modelos listos.")
     except Exception as e:
         print(f"CRITICAL MODEL ERROR: {e}")
         with open("error_log.txt", "a") as f:
@@ -692,7 +927,7 @@ def video_loop():
 
     frame_count = 0
     no_signal_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-    cv2.putText(no_signal_frame, "SINYAL YOK", (400, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+    cv2.putText(no_signal_frame, "SIN SEÑAL", (400, 360), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
 
     while True:
         try:
@@ -709,8 +944,9 @@ def video_loop():
                 name = cam_data["name"]
                 current_time = time.time()
                 
-                # Fetch specific camera ROI
-                cam_roi = cam_data.get("roi_points", [])
+                # Zonas configuradas para esta cámara (con sus módulos ya resueltos)
+                with zone_cache_lock:
+                    camera_zones = list(camera_zones_cache.get(cam_id, []))
                 
                 if cap.isOpened():
                     ret, frame = cap.read()
@@ -744,7 +980,7 @@ def video_loop():
                                         suspicious_activity_detected = True
                                         
                                         if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                            trigger_alert(cam_id, name, f"CRIMINAL ACTIVITY: {class_name}", frame)
+                                            trigger_alert(cam_id, name, f"ACTIVIDAD SOSPECHOSA: {class_name}", frame, cam_data)
                                             cam_data["last_alert_time"] = current_time
                                     else:
                                          cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 1)
@@ -760,7 +996,7 @@ def video_loop():
                                  for b, c, conf in zip(boxes_obj, cls_obj, conf_obj):
                                      if c in TARGET_CLASSES: 
                                          detected_objects.append(b)
-                                         label = f"ITEM: {model_obj.names[c]} {conf:.2f}"
+                                         label = f"ARTÍCULO: {model_obj.names[c]} {conf:.2f}"
                                          cv2.rectangle(frame, (b[0], b[1]), (b[2], b[3]), (0, 165, 255), 2)
                                          cv2.putText(frame, label, (b[0], b[1]-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
                     
@@ -787,10 +1023,7 @@ def video_loop():
                             if state_key not in person_states:
                                 person_states[state_key] = PersonState(track_id)
                             p_state = person_states[state_key]
-                            
-                            is_bending = False
-                            is_reaching = False
-                            
+
                             # --- FACE REC ---
                             if FACE_REC_AVAILABLE and (not p_state.face_checked or (current_time - p_state.face_check_time > 2.0)):
                                 p_state.face_check_time = current_time
@@ -808,88 +1041,86 @@ def video_loop():
                                             match_name = known_face_names[match_index]
                                             match_type = known_face_types[match_index]
                                             if match_type == "blacklist":
-                                                cv2.putText(frame, f"BLACKLIST: {match_name}", (box[0], box[1]-30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3)
+                                                cv2.putText(frame, f"LISTA NEGRA: {match_name}", (box[0], box[1]-30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3)
                                                 if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                                    trigger_alert(cam_id, name, f"BLACKLIST FACE: {match_name}", frame)
+                                                    trigger_alert(cam_id, name, f"ROSTRO EN LISTA NEGRA: {match_name}", frame, cam_data)
                                                     cam_data["last_alert_time"] = current_time
                                             else:
                                                 cv2.putText(frame, f"VIP: {match_name}", (box[0], box[1]-30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
                                 p_state.face_checked = True
 
-                            # --- POSE & THEFT LOGIC ---
+                            # --- OVERLAY DE POSTURA (no modelado como módulo de comportamiento) ---
                             is_bending = check_bending(kpts)
-                            
-                            if not model_is_specialized:
-                                left_has_obj = check_object_in_hand(kpts, detected_objects, "LEFT")
-                                right_has_obj = check_object_in_hand(kpts, detected_objects, "RIGHT")
-                                current_holding = left_has_obj or right_has_obj
-                                holding_hand = "LEFT" if left_has_obj else "RIGHT" if right_has_obj else None
-    
-                                if current_holding:
-                                    p_state.holding_object = True
-                                    p_state.last_holding_time = current_time
-                                    p_state.holding_hand = holding_hand
-                                    cv2.putText(frame, f"HOLDING ({holding_hand})", (box[0], box[1]-60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
-                                
-                                if p_state.holding_object and not current_holding:
-                                    time_since_hold = current_time - p_state.last_holding_time
-                                    if time_since_hold < 3.0: 
-                                         hand_to_check = p_state.holding_hand
-                                         if hand_to_check and check_concealment(kpts, hand_to_check):
-                                              cv2.putText(frame, "THEFT DETECTED!", (box[0], box[1]-80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
-                                              cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 3)
-                                              if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                                  trigger_alert(cam_id, name, "THEFT CONFIRMED (Item Concealed)", frame)
-                                                  cam_data["last_alert_time"] = current_time
-                                                  p_state.holding_object = False 
-                                    else:
-                                        if time_since_hold > 3.0:
-                                            p_state.holding_object = False
-                                            p_state.holding_hand = None
-
-                            # --- ROI LOGIC ---
-                            is_reaching, _ = check_reaching(kpts, cam_roi)
-                            if is_reaching:
-                                cv2.putText(frame, "RESTRICTED AREA ENT!", (box[0], box[1]-40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                                if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                     trigger_alert(cam_id, name, "RESTRICTED AREA INTRUSION", frame)
-                                     cam_data["last_alert_time"] = current_time
-
                             if is_bending:
-                                cv2.putText(frame, "BENDING", (box[0], box[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-                            
-                            # --- LOITERING ---
+                                cv2.putText(frame, "AGACHADO", (box[0], box[1] + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
                             center_x = int((box[0] + box[2]) / 2)
                             center_y = int((box[1] + box[3]) / 2)
                             update_heatmap(cam_data, center_x, center_y, frame.shape)
-                            
-                            is_inside_roi = False
-                            if len(cam_roi) >= 3:
-                                if cv2.pointPolygonTest(np.array(cam_roi), (center_x, center_y), False) >= 0:
-                                    is_inside_roi = True
-                            
-                            if is_inside_roi:
-                                if track_id not in cam_data["roi_entry_times"]:
-                                    cam_data["roi_entry_times"][track_id] = time.time()
-                                duration = time.time() - cam_data["roi_entry_times"][track_id]
-                                cv2.putText(frame, f"{duration:.1f}s", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
-                                if duration > LOITERING_THRESHOLD:
-                                     if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
-                                         trigger_alert(cam_id, name, "LOITERING SUSPICION", frame)
-                                         cam_data["last_alert_time"] = current_time
-                            else:
-                                if track_id in cam_data["roi_entry_times"]:
-                                    del cam_data["roi_entry_times"][track_id]
+                            # --- MOTOR DE MÓDULOS DE COMPORTAMIENTO ---
+                            # Qué zonas/módulos corren en esta cámara sale de camera_zones_cache
+                            # (config en SQLite, refrescada cada 5s o al instante al guardar desde el dashboard).
+                            # hip_y/vertical_speed se calculan una sola vez por persona por frame
+                            # (no por zona) -- ver docstring de compute_hip_motion().
+                            hip_y, vertical_speed = compute_hip_motion(kpts, p_state, current_time)
 
-                    frame = get_heatmap_overlay(cam_data, frame) 
-                    
+                            ctx = TrackContext(
+                                track_id=str(track_id),
+                                keypoints=kpts,
+                                box=box,
+                                center=(center_x, center_y),
+                                current_time=current_time,
+                                p_state=p_state,
+                                detected_objects=detected_objects,
+                                hip_y=hip_y,
+                                vertical_speed=vertical_speed
+                            )
+
+                            for zone in camera_zones:
+                                for zm in zone["modules"]:
+                                    module_id = zm["module_id"]
+                                    # concealment depende de detected_objects, que solo se calcula
+                                    # en modo fallback (mismo comportamiento que antes del refactor)
+                                    if module_id == "concealment" and model_is_specialized:
+                                        continue
+                                    module = MODULE_REGISTRY.get(module_id)
+                                    if not module:
+                                        continue
+
+                                    for event in module.analyze(ctx, zone["zone_id"], zone["polygon"], zm["params"]):
+                                        if event.type == "zone_intrusion":
+                                            cv2.putText(frame, "¡ENTRADA A ZONA RESTRINGIDA!", (box[0], box[1]-40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        elif event.type == "concealment":
+                                            cv2.putText(frame, "¡ROBO DETECTADO!", (box[0], box[1]-80), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+                                            cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 0, 255), 3)
+                                        elif event.type == "wall_climbing":
+                                            cv2.putText(frame, "¡ESCALANDO MURO!", (box[0], box[1]-100), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 140, 255), 2)
+
+                                        if current_time - cam_data["last_alert_time"] > ALERT_COOLDOWN:
+                                            trigger_alert(cam_id, name, event.explanation, frame, cam_data)
+                                            cam_data["last_alert_time"] = current_time
+
+                            if p_state.last_dwell_durations:
+                                max_dwell = max(p_state.last_dwell_durations.values())
+                                cv2.putText(frame, f"{max_dwell:.1f}s", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+
+                    frame = get_heatmap_overlay(cam_data, frame)
+
                     if results_pose[0].keypoints is not None:
                          res_plotted = results_pose[0].plot()
                          frame = res_plotted
 
-                    if len(cam_roi) > 0:
-                        cv2.polylines(frame, [np.array(cam_roi)], isClosed=True, color=(0, 255, 255), thickness=2)
+                    for zone_idx, zone in enumerate(camera_zones):
+                        if len(zone["polygon"]) > 0:
+                            zone_color = ZONE_COLORS[zone_idx % len(ZONE_COLORS)]
+                            pts = np.array(zone["polygon"])
+                            cv2.polylines(frame, [pts], isClosed=True, color=zone_color, thickness=2)
+                            cv2.putText(frame, zone["name"], tuple(pts[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, zone_color, 2)
+
+                clip_frame = cv2.resize(frame, (CLIP_WIDTH, CLIP_HEIGHT))
+                cam_data["clip_buffer"].append((clip_frame, current_time))
+                finalize_ready_clips(cam_id, cam_data, current_time)
 
                 _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
                 jpg_as_text = base64.b64encode(buffer).decode('utf-8')
@@ -921,22 +1152,29 @@ def video_loop():
             time.sleep(1)
 
 
-def trigger_alert(cam_id, cam_name, message, frame):
+def trigger_alert(cam_id, cam_name, message, frame, cam_data):
     global alert_payload
     try:
         print(f"ALERT: {message}")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"alerts/alert_{cam_id}_{timestamp}.jpg"
         cv2.imwrite(filename, frame)
-        
+
         # database
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
         alert_id = str(uuid.uuid4())
-        c.execute("INSERT INTO alerts VALUES (?,?,?,?)", (alert_id, message, timestamp, filename))
+        c.execute(
+            "INSERT INTO alerts (id, message, timestamp, image_path) VALUES (?,?,?,?)",
+            (alert_id, message, timestamp, filename)
+        )
         conn.commit()
         conn.close()
-        
+
+        # Evidencia en video: se resuelve unos segundos después (post-roll),
+        # ver finalize_ready_clips() / encode_and_save_clip()
+        cam_data["clip_pending"].append({"alert_id": alert_id, "trigger_time": time.time()})
+
         with lock:
             alert_payload = {
                 "id": alert_id,
@@ -945,13 +1183,64 @@ def trigger_alert(cam_id, cam_name, message, frame):
                 "image_path": filename,
                 "camera_id": cam_id
             }
-            
+
         # Send Email/Telegram if enabled (Settings)
         # We can implement a fire-and-forget thread for this to not block loop
         threading.Thread(target=send_notifications, args=(message, filename)).start()
-        
+
     except Exception as e:
         print(f"Alert Error: {e}")
+
+def finalize_ready_clips(camera_id, cam_data, current_time):
+    still_pending = []
+    for pending in cam_data["clip_pending"]:
+        if current_time - pending["trigger_time"] >= CLIP_POST_SECONDS:
+            window_start = pending["trigger_time"] - CLIP_PRE_SECONDS
+            window_end = pending["trigger_time"] + CLIP_POST_SECONDS
+            frames = [(f, ts) for f, ts in cam_data["clip_buffer"] if window_start <= ts <= window_end]
+            threading.Thread(
+                target=encode_and_save_clip,
+                args=(camera_id, pending["alert_id"], frames),
+                daemon=True
+            ).start()
+        else:
+            still_pending.append(pending)
+    cam_data["clip_pending"] = still_pending
+
+def encode_and_save_clip(camera_id, alert_id, frames):
+    if len(frames) < 2:
+        return
+    try:
+        duration = frames[-1][1] - frames[0][1]
+        fps = max(1, round(len(frames) / duration)) if duration > 0 else CLIP_FPS_FALLBACK
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"alerts/clip_{camera_id}_{timestamp}.mp4"
+
+        proc = subprocess.Popen([
+            "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "-s", f"{CLIP_WIDTH}x{CLIP_HEIGHT}", "-r", str(fps), "-i", "-",
+            "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            filename
+        ], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for frame, _ in frames:
+            proc.stdin.write(frame.tobytes())
+        proc.stdin.close()
+        proc.wait()
+
+        if proc.returncode != 0 or not os.path.exists(filename):
+            print(f"Error codificando clip para alerta {alert_id}")
+            return
+
+        with open(filename, "rb") as f:
+            clip_hash = hashlib.sha256(f.read()).hexdigest()
+
+        conn = sqlite3.connect(DB_NAME)
+        conn.execute("UPDATE alerts SET clip_path = ?, clip_hash = ? WHERE id = ?", (filename, clip_hash, alert_id))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Clip Error: {e}")
 
 def send_notifications(message, image_path):
     try:
@@ -962,9 +1251,9 @@ def send_notifications(message, image_path):
                 msg = MIMEMultipart()
                 msg['From'] = sender_email
                 msg['To'] = current_settings.receiverEmail
-                msg['Subject'] = "Theft Guard AI - Security Alert"
-                
-                body = f"ALERT: {message}\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                msg['Subject'] = "TheftGuard AI - Alerta de seguridad"
+
+                body = f"ALERTA: {message}\nFecha y hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 msg.attach(MIMEText(body, 'plain'))
                 
                 try:
@@ -988,7 +1277,7 @@ def send_notifications(message, image_path):
             if bot_token and chat_id:
                 url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
                 with open(image_path, 'rb') as photo:
-                    data = {"chat_id": chat_id, "caption": f"🚨 THEFT GUARD ALERT 🚨\n\n{message}"}
+                    data = {"chat_id": chat_id, "caption": f"🚨 ALERTA THEFTGUARD 🚨\n\n{message}"}
                     files = {"photo": photo}
                     resp = requests.post(url, data=data, files=files)
                 if resp.status_code == 200:
@@ -1022,6 +1311,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    refresh_zone_cache()
+    threading.Thread(target=zone_cache_refresher_loop, daemon=True).start()
     t = threading.Thread(target=video_loop, daemon=True)
     t.start()
     yield

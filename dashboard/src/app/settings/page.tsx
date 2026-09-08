@@ -59,13 +59,13 @@ export default function SettingsPage() {
       });
       const data = await response.json();
       if (response.ok) {
-        setMessage("Settings saved successfully!");
+        setMessage("¡Configuración guardada correctamente!");
       } else {
-        setMessage(data.message || "Failed to save settings.");
+        setMessage(data.message || "No se pudo guardar la configuración.");
       }
     } catch (err) {
       console.error(err);
-      setMessage("Network error. Make sure backend is running.");
+      setMessage("Error de red. Verifica que el backend esté corriendo.");
     } finally {
       setSaving(false);
       setTimeout(() => setMessage(""), 3000);
@@ -83,8 +83,8 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl mx-auto pb-10">
       <header className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight mb-2">Notification Settings</h2>
-        <p className="text-foreground/60">Configure how and where you receive security alerts.</p>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">Configuración de notificaciones</h2>
+        <p className="text-foreground/60">Configura cómo y dónde recibes las alertas de seguridad.</p>
       </header>
 
       <div className="space-y-6">
@@ -94,45 +94,45 @@ export default function SettingsPage() {
             <div className="p-2 rounded bg-blue-500/20 text-blue-400">
               <Send className="w-5 h-5" />
             </div>
-            <h3 className="text-xl font-semibold">Telegram Integration</h3>
+            <h3 className="text-xl font-semibold">Integración con Telegram</h3>
           </div>
           <p className="text-sm text-foreground/60 mb-6">
-            Receive instant photo and caption alerts directly to your Telegram app.
+            Recibe alertas instantáneas con foto y descripción directo en tu app de Telegram.
           </p>
 
           <form className="space-y-4" onSubmit={e => e.preventDefault()}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Bot Token</label>
-                <input 
-                  type="password" 
+                <label className="text-sm font-medium text-foreground/80">Token del bot</label>
+                <input
+                  type="password"
                   name="telegramBotToken"
                   value={settings.telegramBotToken}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Chat ID</label>
-                <input 
-                  type="text" 
+                <label className="text-sm font-medium text-foreground/80">ID del chat</label>
+                <input
+                  type="text"
                   name="telegramChatId"
                   value={settings.telegramChatId}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
             </div>
             <div className="flex items-center gap-2 mt-2">
-              <input 
-                type="checkbox" 
-                id="enable-telegram" 
+              <input
+                type="checkbox"
+                id="enable-telegram"
                 name="telegramEnabled"
                 checked={settings.telegramEnabled}
                 onChange={handleChange}
-                className="rounded bg-black/40 border-glass-border text-brand" 
+                className="rounded bg-black/40 border-glass-border text-brand"
               />
-              <label htmlFor="enable-telegram" className="text-sm text-foreground/80">Enable Telegram Alerts</label>
+              <label htmlFor="enable-telegram" className="text-sm text-foreground/80">Habilitar alertas de Telegram</label>
             </div>
           </form>
         </div>
@@ -143,75 +143,75 @@ export default function SettingsPage() {
             <div className="p-2 rounded bg-purple-500/20 text-purple-400">
               <Mail className="w-5 h-5" />
             </div>
-            <h3 className="text-xl font-semibold">Email (SMTP) Settings</h3>
+            <h3 className="text-xl font-semibold">Configuración de correo (SMTP)</h3>
           </div>
           <p className="text-sm text-foreground/60 mb-6">
-            Receive detailed text alerts and reports via email.
+            Recibe alertas y reportes detallados por correo electrónico.
           </p>
 
           <form className="space-y-4" onSubmit={e => e.preventDefault()}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">SMTP Server</label>
-                <input 
-                  type="text" 
+                <label className="text-sm font-medium text-foreground/80">Servidor SMTP</label>
+                <input
+                  type="text"
                   name="smtpServer"
                   value={settings.smtpServer}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Port</label>
-                <input 
-                  type="number" 
+                <label className="text-sm font-medium text-foreground/80">Puerto</label>
+                <input
+                  type="number"
                   name="smtpPort"
                   value={settings.smtpPort}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Sender Email</label>
-                <input 
-                  type="email" 
+                <label className="text-sm font-medium text-foreground/80">Correo remitente</label>
+                <input
+                  type="email"
                   name="senderEmail"
                   value={settings.senderEmail}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Password / App Password</label>
-                <input 
-                  type="password" 
+                <label className="text-sm font-medium text-foreground/80">Contraseña / contraseña de aplicación</label>
+                <input
+                  type="password"
                   name="senderPassword"
                   value={settings.senderPassword}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium text-foreground/80">Recipient Email(s)</label>
-                <input 
-                  type="text" 
+                <label className="text-sm font-medium text-foreground/80">Correo(s) destinatario(s)</label>
+                <input
+                  type="text"
                   name="receiverEmail"
                   value={settings.receiverEmail}
                   onChange={handleChange}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" 
+                  className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
             </div>
             <div className="flex items-center gap-2 mt-2">
-              <input 
-                type="checkbox" 
-                id="enable-email" 
+              <input
+                type="checkbox"
+                id="enable-email"
                 name="emailEnabled"
                 checked={settings.emailEnabled}
                 onChange={handleChange}
-                className="rounded bg-black/40 border-glass-border text-brand" 
+                className="rounded bg-black/40 border-glass-border text-brand"
               />
-              <label htmlFor="enable-email" className="text-sm text-foreground/80">Enable Email Alerts</label>
+              <label htmlFor="enable-email" className="text-sm text-foreground/80">Habilitar alertas por correo</label>
             </div>
           </form>
         </div>
@@ -219,8 +219,8 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between pt-4">
           <div>
             {message && (
-              <span className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded ${message.includes('success') ? 'text-green-400 bg-green-400/10' : 'text-danger bg-danger/10'}`}>
-                {message.includes('success') && <CheckCircle2 className="w-4 h-4" />}
+              <span className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded ${message.includes('correctamente') ? 'text-green-400 bg-green-400/10' : 'text-danger bg-danger/10'}`}>
+                {message.includes('correctamente') && <CheckCircle2 className="w-4 h-4" />}
                 {message}
               </span>
             )}
@@ -231,7 +231,7 @@ export default function SettingsPage() {
             className="flex items-center gap-2 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? "Guardando..." : "Guardar cambios"}
           </button>
         </div>
       </div>

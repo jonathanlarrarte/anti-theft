@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TheftGuard Dashboard",
-  description: "Advanced Anti-Theft AI System Dashboard",
+  title: "Panel de TheftGuard",
+  description: "Panel del sistema de IA antirrobo avanzado",
 };
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex`}>
         <Sidebar />
         <main className="flex-1 p-6 h-screen overflow-y-auto">

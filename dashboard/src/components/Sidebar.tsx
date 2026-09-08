@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, History, Settings, Users, Video } from "lucide-react";
+import { LayoutDashboard, History, Settings, Users, Video, BookOpen } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   const links = [
-    { href: "/", label: "Overview", icon: LayoutDashboard },
-    { href: "/cameras", label: "Cameras", icon: Video },
-    { href: "/faces", label: "Faces", icon: Users },
-    { href: "/history", label: "Alert History", icon: History },
-    { href: "/settings", label: "Settings", icon: Settings },
+    { href: "/", label: "Resumen", icon: LayoutDashboard },
+    { href: "/cameras", label: "Cámaras", icon: Video },
+    { href: "/faces", label: "Rostros", icon: Users },
+    { href: "/history", label: "Historial de alertas", icon: History },
+    { href: "/settings", label: "Configuración", icon: Settings },
+    { href: "/docs", label: "Documentación", icon: BookOpen },
   ];
 
   return (
@@ -47,10 +48,10 @@ export default function Sidebar() {
 
       <div className="mt-auto pt-8 pb-4">
         <div className="px-4 py-3 rounded-lg bg-black/20 border border-glass-border">
-          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-1">System Status</div>
+          <div className="text-xs text-foreground/50 uppercase tracking-wider mb-1">Estado del sistema</div>
           <div className="flex items-center gap-2 text-sm text-green-400">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-            Online & Active
+            En línea y activo
           </div>
         </div>
       </div>

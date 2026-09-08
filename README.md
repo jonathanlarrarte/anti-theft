@@ -72,8 +72,8 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
 Clone the repository and install the Python dependencies:
 
 ```bash
-git clone https://github.com/vahapogut/Theft-Detection.git
-cd Theft-Detection
+git clone https://github.com/larrarte13/theft-detection.git
+cd theft-detection
 pip install -r requirements.txt
 ```
 
@@ -174,6 +174,12 @@ This is expected on Windows unless you've manually installed dlib. The system lo
 
 ---
 
+## Docker Setup
+
+For a one-command setup that doesn't require installing Python or Node.js locally, see [SETUP.md](SETUP.md) (Docker Desktop guide, in Spanish) and [docs/arquitectura-deteccion-comportamientos.md](docs/arquitectura-deteccion-comportamientos.md) for the behavior-detection module architecture.
+
+---
+
 ## Contributing 
 
 1. Fork this repository.
@@ -190,5 +196,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-*Project Maintainer & Developer: **Abdulvahap Öğüt***  
-*GitHub Repository:* [vahapogut/Theft-Detection](https://github.com/vahapogut/Theft-Detection)
+*GitHub Repository:* [larrarte13/theft-detection](https://github.com/larrarte13/theft-detection)
+
+*Originally based on [vahapogut/Theft-Detection](https://github.com/vahapogut/Theft-Detection) by Abdulvahap Öğüt.*

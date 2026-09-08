@@ -51,7 +51,7 @@ export default function FacesPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !photo) {
-      setMessage({ text: "Lütfen tüm alanları doldurun ve bir fotoğraf seçin.", type: "error" });
+      setMessage({ text: "Completa todos los campos y selecciona una foto.", type: "error" });
       return;
     }
 
@@ -71,28 +71,28 @@ export default function FacesPage() {
       const data = await res.json();
 
       if (res.ok && data.status === "success") {
-        setMessage({ text: `Yüz başarıyla kaydedildi: ${name}`, type: "success" });
+        setMessage({ text: `Rostro registrado correctamente: ${name}`, type: "success" });
         setName("");
         setPhoto(null);
         // Reset file input
         const fileInput = document.getElementById("photo-input") as HTMLInputElement;
         if (fileInput) fileInput.value = "";
-        
+
         await fetchFaces();
       } else {
-        setMessage({ text: data.message || "Yüz kaydı başarısız oldu.", type: "error" });
+        setMessage({ text: data.message || "No se pudo registrar el rostro.", type: "error" });
       }
     } catch (err) {
       console.error(err);
-      setMessage({ text: "Bağlantı hatası. Backend'in çalıştığından emin olun.", type: "error" });
+      setMessage({ text: "Error de conexión. Verifica que el backend esté corriendo.", type: "error" });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu yüz tanıma kaydını silmek istediğinize emin misiniz?")) return;
-    
+    if (!confirm("¿Seguro que quieres eliminar este registro facial?")) return;
+
     setDeleteLoadingId(id);
     setMessage(null);
 
@@ -103,14 +103,14 @@ export default function FacesPage() {
       const data = await res.json();
 
       if (res.ok && data.status === "success") {
-        setMessage({ text: "Kayıt başarıyla silindi.", type: "success" });
+        setMessage({ text: "Registro eliminado correctamente.", type: "success" });
         await fetchFaces();
       } else {
-        setMessage({ text: data.message || "Kayıt silinemedi.", type: "error" });
+        setMessage({ text: data.message || "No se pudo eliminar el registro.", type: "error" });
       }
     } catch (err) {
       console.error(err);
-      setMessage({ text: "Bağlantı hatası.", type: "error" });
+      setMessage({ text: "Error de conexión.", type: "error" });
     } finally {
       setDeleteLoadingId(null);
     }
@@ -127,9 +127,9 @@ export default function FacesPage() {
   return (
     <div className="max-w-6xl mx-auto pb-10">
       <header className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight mb-2">Face Recognition Management</h2>
+        <h2 className="text-3xl font-bold tracking-tight mb-2">Gestión de reconocimiento facial</h2>
         <p className="text-foreground/60">
-          Register individuals to White or Black lists for dynamic, real-time alert triggering.
+          Registra personas en lista blanca o negra para disparar alertas en tiempo real.
         </p>
       </header>
 
@@ -154,36 +154,36 @@ export default function FacesPage() {
               <div className="p-2 rounded bg-brand/20 text-brand">
                 <UserPlus className="w-5 h-5" />
               </div>
-              <h3 className="text-xl font-semibold">Register New Face</h3>
+              <h3 className="text-xl font-semibold">Registrar nuevo rostro</h3>
             </div>
 
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Full Name</label>
-                <input 
-                  type="text" 
+                <label className="text-sm font-medium text-foreground/80">Nombre completo</label>
+                <input
+                  type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="e.g. John Doe"
+                  placeholder="ej. Juan Pérez"
                   className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand text-foreground placeholder:text-foreground/30"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">List Type</label>
-                <select 
+                <label className="text-sm font-medium text-foreground/80">Tipo de lista</label>
+                <select
                   value={type}
                   onChange={e => setType(e.target.value as "blacklist" | "whitelist")}
                   className="w-full bg-black/40 border border-glass-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand text-foreground"
                 >
-                  <option value="blacklist" className="bg-[#0f111a]">Blacklist (Alarms Active)</option>
-                  <option value="whitelist" className="bg-[#0f111a]">Whitelist (VIP/Trusted)</option>
+                  <option value="blacklist" className="bg-[#0f111a]">Lista negra (alarmas activas)</option>
+                  <option value="whitelist" className="bg-[#0f111a]">Lista blanca (VIP/confiable)</option>
                 </select>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Face Reference Photo</label>
+                <label className="text-sm font-medium text-foreground/80">Foto de referencia</label>
                 <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-glass-border border-dashed rounded-lg bg-black/20 hover:bg-black/30 transition-colors cursor-pointer relative group">
                   <div className="space-y-1 text-center">
                     <svg
@@ -202,10 +202,10 @@ export default function FacesPage() {
                     </svg>
                     <div className="flex text-sm text-foreground/60">
                       <span className="relative rounded-md font-semibold text-brand hover:text-brand/80 focus-within:outline-none">
-                        Upload a file
+                        Subir un archivo
                       </span>
                     </div>
-                    <p className="text-xs text-foreground/45">PNG, JPG, JPEG up to 10MB</p>
+                    <p className="text-xs text-foreground/45">PNG, JPG, JPEG hasta 10MB</p>
                   </div>
                   <input 
                     id="photo-input" 
@@ -217,17 +217,17 @@ export default function FacesPage() {
                   />
                 </div>
                 {photo && (
-                  <p className="text-xs text-brand font-medium">Selected: {photo.name}</p>
+                  <p className="text-xs text-brand font-medium">Seleccionado: {photo.name}</p>
                 )}
               </div>
 
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={submitting}
                 className="w-full mt-4 flex items-center justify-center gap-2 bg-brand hover:bg-brand/90 disabled:opacity-50 text-white py-2 rounded-lg font-medium transition-colors cursor-pointer"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                {submitting ? "Registering..." : "Register Face"}
+                {submitting ? "Registrando..." : "Registrar rostro"}
               </button>
             </form>
           </div>
@@ -240,12 +240,12 @@ export default function FacesPage() {
               <div className="p-2 rounded bg-purple-500/20 text-purple-400">
                 <Users className="w-5 h-5" />
               </div>
-              <h3 className="text-xl font-semibold">Registered Faces ({faces.length})</h3>
+              <h3 className="text-xl font-semibold">Rostros registrados ({faces.length})</h3>
             </div>
 
             {faces.length === 0 ? (
               <div className="text-center p-12 text-foreground/40 border border-glass-border border-dashed rounded-lg bg-black/10">
-                No faces registered yet. Use the registration form to add faces.
+                Aún no hay rostros registrados. Usa el formulario para agregar uno.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -274,12 +274,12 @@ export default function FacesPage() {
                           {face.type === "blacklist" ? (
                             <span className="flex items-center gap-1 text-[10px] uppercase font-bold text-danger bg-danger/10 px-2 py-0.5 rounded-full border border-danger/20">
                               <ShieldAlert className="w-3 h-3" />
-                              Blacklist
+                              Lista negra
                             </span>
                           ) : (
                             <span className="flex items-center gap-1 text-[10px] uppercase font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
                               <ShieldCheck className="w-3 h-3" />
-                              VIP Whitelist
+                              Lista blanca VIP
                             </span>
                           )}
                         </div>
@@ -290,7 +290,7 @@ export default function FacesPage() {
                       onClick={() => handleDelete(face.id)}
                       disabled={deleteLoadingId === face.id}
                       className="p-2 text-foreground/50 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                      title="Sil"
+                      title="Eliminar"
                     >
                       {deleteLoadingId === face.id ? (
                         <Loader2 className="w-5 h-5 animate-spin" />
