@@ -1,63 +1,17 @@
 # TheftGuard AI - Advanced Anti-Theft AI Security System
 
-TheftGuard AI is an advanced, enterprise-grade video surveillance and anti-theft security solution designed for retail spaces, supermarkets, and smart facilities. It utilizes cutting-edge Computer Vision, real-time Pose Estimation, Object Detection, and Facial Recognition algorithms to detect shoplifting, loitering, restricted area intrusions, and fighting. 
+TheftGuard AI is a video surveillance and anti-theft security solution designed for retail spaces, supermarkets, and smart facilities. It uses Computer Vision, real-time Pose Estimation, Object Detection, and Facial Recognition to detect shoplifting, loitering, restricted area intrusions, and fighting.
 
-The system leverages optimized, multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras) synchronously, triggering instant browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
+The system leverages multi-threaded pipelines to analyze concurrent camera feeds (local webcams or RTSP network cameras), triggering browser-synthesized audio sirens and sending remote alerts via Email and Telegram.
 
 **Live Demo:** [theft-detection-dusky.vercel.app](https://theft-detection-dusky.vercel.app/)
-
-[![TheftGuard Dashboard Showcase](docs/dashboard.png)](https://theft-detection-dusky.vercel.app/)
-
----
-
-## Premium System Capabilities & Key Features
-
-### 1. Multi-Threaded Camera Architecture
-*   **Asynchronous Frame Reading:** Captures frames independently via high-performance python threading (`ThreadedCamera`), avoiding sequential frame capture lag or UI freezes.
-*   **Robust Multi-Camera Tracking:** Dynamically resolves tracker ID conflicts across multiple feeds simultaneously by isolating states uniquely using camera-to-person composites `(camera_id, track_id)`.
-
-### 2. Interactive Canvas ROI Drawer
-*   **HTML5 Canvas Drawing Tool:** Draw precise security boundaries (Polygons) overlaying live webcam/RTSP feeds directly inside a glassmorphic dashboard modal.
-*   **Resolution-Agnostic Scaling:** Autonomously maps client-side mouse vectors into exact `1280x720` surveillance matrix coordinates, preventing scaling discrepancies across different screen resolutions.
-*   **Camera-Specific Storage:** Camera definitions and their respective ROI coordinate lists are saved persistently inside `cameras.json`.
-
-![Camera Setup & Configuration](docs/cameras.png)
-
-### 3. Advanced Behavior & Posture Estimation
-*   **Item Concealment Logic:** Recognizes when a person picks up a target retail item and monitors hand-to-pocket/bag gestures, flagging potential concealment attempts.
-*   **Loitering Detection:** Evaluates how long a person dwells within a specific ROI. If loitering exceeds the configurable threshold, an alarm is triggered.
-*   **Zone Intrusion Alerts:** Instantly sounds sirens if human wrists cross into high-security zones (e.g., cash register areas, restricted aisles).
-*   **Postural Suspicion:** Detects unusual physical behavior such as sudden bending down in low-visibility aisles.
-*   **Activity Heatmaps:** Localized heatmap accumulators aggregate and visually plot customer traffic patterns individually for each camera stream.
-
-### 4. Facial Recognition & Database Panel
-*   **Face ID Classification:** A dedicated, premium **Face Management** panel to upload portrait photos, register new faces, and assign categorizations:
-    *   **Blacklist:** Automatically triggers high-priority security alarms and records evidence.
-    *   **VIP Whitelist:** Identifies trusted staff, loyal clients, or VIP visitors, showing a green greeting badge.
-*   **Instant Face Database Deletion:** One-click instant SQLite deletion with automatic memory synchronization.
-
-![Face Recognition Management](docs/faces.png)
-
-### 5. Client-Side Synthetic Audio Siren & Notifications
-*   **Web Audio API Integration:** Avoids brittle MP3 loading loops by synthesizing realistic, sweeping emergency sirens directly in the browser's audio processor in real-time when alarms fire.
-*   **High-Priority Cooldowns:** Protects users from noise fatigue by enforcing a 3-second smart alarm cooldown period.
-*   **Telegram & SMTP Setup:** Instantly broadcast alerts and snapshots via Telegram chat integrations and automated Email notifications.
-
-![Notification Settings](docs/settings.png)
-
-### 6. Centralized Glassmorphic Control Room
-*   **Performance Telemetry:** Displays dynamic CPU usage and Memory (RAM) virtual bars mapped directly from backend psutil resources.
-*   **Weekly Trends:** Integrates custom, sleek Recharts data visualizations highlighting security events categorized by "Suspicious Behavior" and "Reviewed/False Alarms".
-*   **Advanced Filtering & CSV Export:** Search historical logs by ID, message, or camera, filter by event categories, and download filtered alerts into a clean Excel/CSV file with a single click.
-
-![Alert History](docs/history.png)
 
 ---
 
 ## Technical Architecture
 
-*   **Backend Engine:** Python 3.10+, FastAPI (Asynchronous API endpoints & WebSockets), OpenCV (Multi-threaded streaming), Ultralytics YOLOv8 (Stand-alone Pose & Object model detection), `face_recognition` (Dlib-based CNN face encodings), SQLite3 (Database storage for logs & face matrices).
-*   **Frontend Dashboard:** Next.js 14+ (App Router), React 18, Tailwind CSS, Recharts (Modern chart libraries), Lucide React (Fluent vector icons), HSL Custom Themes (Harmonious Glassmorphic Dark UI).
+*   **Backend Engine:** Python 3.10+, FastAPI (Asynchronous API endpoints & WebSockets), OpenCV (Multi-threaded streaming), Ultralytics YOLOv8 (Pose & Object detection), `face_recognition` (Dlib-based CNN face encodings), SQLite3 (logs & face matrices storage).
+*   **Frontend Dashboard:** Next.js 14+ (App Router), React 18, Tailwind CSS, Recharts, Lucide React.
 
 ---
 
@@ -66,7 +20,7 @@ The system leverages optimized, multi-threaded pipelines to analyze concurrent c
 ### Prerequisites
 *   Python 3.9 - 3.11
 *   Node.js (LTS version)
-*   CUDA Enabled NVIDIA GPU (Highly recommended for fluid real-time inference)
+*   CUDA Enabled NVIDIA GPU (recommended for fluid real-time inference)
 
 ### 1. Backend Configuration
 Clone the repository and install the Python dependencies:
@@ -149,6 +103,9 @@ npm run dev
 py standalone_demo.py
 ```
 
+### Docker Setup
+For a one-command setup that doesn't require installing Python or Node.js locally, see [SETUP.md](SETUP.md) (Docker Desktop guide, in Spanish).
+
 ---
 
 ## Troubleshooting
@@ -171,22 +128,6 @@ This is expected on Windows unless you've manually installed dlib. The system lo
 - Confirm the backend is running (`http://localhost:8000/docs` should load)
 - Check Windows Firewall isn't blocking port 8000
 - Verify `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000` exists in `dashboard/.env.local`
-
----
-
-## Docker Setup
-
-For a one-command setup that doesn't require installing Python or Node.js locally, see [SETUP.md](SETUP.md) (Docker Desktop guide, in Spanish) and [docs/arquitectura-deteccion-comportamientos.md](docs/arquitectura-deteccion-comportamientos.md) for the behavior-detection module architecture.
-
----
-
-## Contributing 
-
-1. Fork this repository.
-2. Create your feature branch (`git checkout -b feature/CoolFeature`).
-3. Commit your upgrades (`git commit -m 'feat: add cool feature'`).
-4. Push to your branch (`git push origin feature/CoolFeature`).
-5. Open a Pull Request.
 
 ---
 
