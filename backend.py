@@ -400,14 +400,8 @@ class ThreadedCamera:
             is_index = False
         self.is_index = is_index
 
-        if is_index and os.name == 'nt':
-            self.cap = cv2.VideoCapture(self.src_val, cv2.CAP_DSHOW)
-        else:
-            self.cap = cv2.VideoCapture(self.src_val)
-
+        self.cap = self._open_capture()
         if self.cap.isOpened():
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             self.ret, self.frame = self.cap.read()
         else:
             self.ret = False
@@ -415,11 +409,31 @@ class ThreadedCamera:
 
         self.running = True
         self.lock = threading.Lock()
+        # Siempre arranca el hilo, incluso si la apertura inicial falló, para
+        # que update() pueda reintentar la conexión más adelante (RTSP puede
+        # no estar disponible justo en el momento de agregar la cámara).
         self.thread = threading.Thread(target=self.update, args=(), daemon=True)
-        if self.cap.isOpened():
-            self.thread.start()
+        self.thread.start()
+
+    def _open_capture(self):
+        if self.is_index and os.name == 'nt':
+            cap = cv2.VideoCapture(self.src_val, cv2.CAP_DSHOW)
+        else:
+            cap = cv2.VideoCapture(self.src_val)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        return cap
 
     def update(self):
+        # Reconexión automática: si pasan RECONNECT_AFTER segundos sin un
+        # frame válido (stream RTSP caído, glitch de red, apertura inicial
+        # fallida), reabre la captura en vez de quedarse en "SIN SEÑAL" para siempre.
+        RECONNECT_AFTER = 5
+        RECONNECT_COOLDOWN = 3
+        last_success = time.time()
+        last_reconnect_attempt = 0.0
+
         while self.running:
             if self.cap.isOpened():
                 ret, frame = self.cap.read()
@@ -431,9 +445,25 @@ class ThreadedCamera:
                     self.ret = ret
                     if ret:
                         self.frame = frame
+                if ret:
+                    last_success = time.time()
                 time.sleep(0.01)
             else:
+                with self.lock:
+                    self.ret = False
                 time.sleep(0.1)
+
+            now = time.time()
+            if now - last_success > RECONNECT_AFTER and now - last_reconnect_attempt > RECONNECT_COOLDOWN:
+                last_reconnect_attempt = now
+                print(f"[ThreadedCamera] Sin frames válidos hace {RECONNECT_AFTER}s, reconectando: {self.src}")
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+                self.cap = self._open_capture()
+                if self.cap.isOpened():
+                    last_success = time.time()
 
     def read(self):
         with self.lock:
