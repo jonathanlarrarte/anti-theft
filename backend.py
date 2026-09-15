@@ -987,7 +987,7 @@ def video_loop():
                 if cap.isOpened() and 'ret' in locals() and ret:
                     
                     # 1. POSE INFERENCE (Every Frame for tracking)
-                    results_pose = model_pose.track(frame, persist=True, verbose=False, classes=[0]) 
+                    results_pose = model_pose.track(frame, persist=True, verbose=False, classes=[0], tracker="bytetrack_custom.yaml")
                     
                     # 2. THEFT / OBJECT INFERENCE
                     detected_objects = []

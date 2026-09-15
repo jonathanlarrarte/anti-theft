@@ -1,0 +1,13 @@
+# ByteTrack config used by backend.py's video_loop().
+# track_buffer raised from the Ultralytics default (30 frames, ~1s) to 90
+# (~3s at this app's ~25fps loop) so a person who briefly bends out of pose
+# range or gets occluded keeps the same track_id instead of getting a new
+# one — a new id resets the per-person loitering dwell timer and concealment
+# state in backend.py's p_state, which are keyed by track_id.
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 90
+match_thresh: 0.8
+fuse_score: True
